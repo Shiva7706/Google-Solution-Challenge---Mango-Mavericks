@@ -4,3 +4,4 @@ networkx
 folium
 datetime
 google
+streamlit_folium
