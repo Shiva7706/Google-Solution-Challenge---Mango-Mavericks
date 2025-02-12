@@ -7,16 +7,49 @@ import google.generativeai as genai
 from datetime import datetime
 
 # Configure Gemini AI
-GEMINI_API_KEY = "AIzaSyDDvsc7lmGKLf52TajecWA4dSK_eV_ckyI"
+GEMINI_API_KEY = "AIzaSyCc-f4VEvlTR8zuQKqa-tNiXbva9AF3RAU"
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-pro')
 
-# Cache the graph loading (modified with simplify=False)
+# Predefined Bengaluru locations
+BENGALURU_LOCATIONS = [
+    "Koramangala, Bengaluru",
+    "Indiranagar, Bengaluru",
+    "Whitefield, Bengaluru",
+    "Jayanagar, Bengaluru",
+    "Malleshwaram, Bengaluru",
+    "Rajajinagar, Bengaluru",
+    "Basavanagudi, Bengaluru",
+    "Electronic City, Bengaluru",
+    "HSR Layout, Bengaluru",
+    "BTM Layout, Bengaluru",
+    "Marathahalli, Bengaluru",
+    "Yelahanka, Bengaluru",
+    "Hebbal, Bengaluru",
+    "KR Puram, Bengaluru",
+    "Banashankari, Bengaluru",
+    "Ulsoor, Bengaluru",
+    "Sadashivanagar, Bengaluru",
+    "MG Road, Bengaluru",
+    "Vijayanagar, Bengaluru",
+    "JP Nagar, Bengaluru",
+    "Sarjapur, Bengaluru",
+    "Bellandur, Bengaluru",
+    "Kengeri, Bengaluru",
+    "Nagarbhavi, Bengaluru",
+    "Hennur, Bengaluru",
+    "RT Nagar, Bengaluru",
+    "Frazer Town, Bengaluru",
+    "Bommanahalli, Bengaluru",
+    "Domlur, Bengaluru",
+    "Shivaji Nagar, Bengaluru"
+]
+
+# Cache the graph loading with simplified=False
 @st.cache_data(ttl=3600)
 def load_city_graph(city_name):
     return ox.graph_from_place(city_name, network_type="drive", simplify=False)
 
-# Cache geocoding results
 @st.cache_data(ttl=3600)
 def cached_geocode(location):
     return ox.geocode(location)
@@ -55,7 +88,6 @@ def plot_route_on_map(G, route):
                 coords = list(data['geometry'].coords)
                 edge_coords.extend(coords)
             else:
-                # Correct coordinate order (lon, lat)
                 start_coords = (G.nodes[u]['x'], G.nodes[u]['y'])
                 end_coords = (G.nodes[v]['x'], G.nodes[v]['y'])
                 edge_coords.extend([start_coords, end_coords])
@@ -64,14 +96,13 @@ def plot_route_on_map(G, route):
             
         coordinates.extend(edge_coords)
     
-    # Convert to Folium's [lat, lon] format
     folium.PolyLine(
         locations=[[lat, lon] for lon, lat in coordinates],
         weight=5,
         color='red',
         opacity=0.8
     ).add_to(m)
-
+    
     folium.Marker(
         [G.nodes[route[0]]['y'], G.nodes[route[0]]['x']],
         popup='Start',
@@ -98,8 +129,29 @@ def optimize_route(G, start_node, end_node):
     except nx.NetworkXNoPath:
         return None
 
+def get_route_analysis(start, end, route_exists=True):
+    if not route_exists:
+        return "Unable to analyze route as no valid path was found."
+    
+    prompt = f"""
+    Analyze the optimal driving route from {start} to {end} in Bengaluru.
+    Consider:
+    - Typical traffic patterns
+    - Road types and capacity
+    - Time of day impacts
+    Provide a brief 2-3 sentence analysis.
+    """
+    
+    try:
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Route analysis unavailable: {str(e)}"
+
 def main():
     st.title("🚗 Smart Traffic Router - Bengaluru")
+    st.caption("Optimized routes considering traffic patterns and road types")
+    
     city = "Bengaluru, India"
     
     with st.spinner("Loading city map data..."):
@@ -109,11 +161,24 @@ def main():
             st.error(f"Error loading map data: {str(e)}")
             return
 
+    # Location input section
     col1, col2 = st.columns(2)
+    
     with col1:
-        start = st.text_input("Start location", "Indiranagar, Bengaluru")
+        st.subheader("Start Location")
+        start_method = st.radio("Input method:", ["Select", "Custom"], key="start")
+        if start_method == "Select":
+            start = st.selectbox("From predefined list", BENGALURU_LOCATIONS, index=1)
+        else:
+            start = st.text_input("Enter custom address", "Indiranagar, Bengaluru")
+    
     with col2:
-        end = st.text_input("End location", "Koramangala, Bengaluru")
+        st.subheader("End Location")
+        end_method = st.radio("Input method:", ["Select", "Custom"], key="end")
+        if end_method == "Select":
+            end = st.selectbox("From predefined list", BENGALURU_LOCATIONS, index=0)
+        else:
+            end = st.text_input("Enter custom address", "Koramangala, Bengaluru")
 
     if st.button("Find Optimal Route", type="primary"):
         with st.spinner("Calculating your route..."):
@@ -127,12 +192,18 @@ def main():
                 if route:
                     m = plot_route_on_map(G, route)
                     folium_static(m)
+                    
+                    with st.spinner("Analyzing route..."):
+                        analysis = get_route_analysis(start, end)
+                        st.info("🤖 Route Analysis: " + analysis)
+                    
                     st.success("✅ Route found successfully!")
                 else:
                     st.error("❌ No valid route found between these locations")
                     
             except Exception as e:
                 st.error(f"Error: {str(e)}")
+                st.info("💡 Tip: Please ensure valid locations within Bengaluru")
 
 if __name__ == "__main__":
     main()
